@@ -6,9 +6,9 @@ const { requireAuth } = require('../middleware/auth');
 
 // Login
 router.post('/login', async (req, res) => {
-  const { email, password } = req.body;
+  const { email: identifier, password } = req.body;
   try {
-    const [rows] = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+    const [rows] = await db.query('SELECT * FROM users WHERE name = ? OR email = ?', [identifier, identifier]);
     if (!rows.length) return res.status(401).json({ error: 'Invalid credentials' });
     const user = rows[0];
     const valid = await bcrypt.compare(password, user.password);
