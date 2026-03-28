@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Products — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main-wrap">
+
+    <header class="page-header">
+      <div>
+        <div class="page-title">Products</div>
+        <div class="page-sub">Manage your product catalog</div>
+      </div>
+      <div class="header-actions">
+        <input class="input" id="search-input" style="width:220px" placeholder="Search products…" oninput="filterProducts()">
+        <select class="select" id="cat-filter" style="width:160px" onchange="filterProducts()">
+          <option value="">All Categories</option>
+        </select>
+        <button class="btn btn-primary" onclick="openAddModal()">+ Add Product</button>
+        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>SKU</th>
+              <th>Category</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="products-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-3)">Loading products…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Add/Edit Product Modal -->
+<div class="modal-overlay hidden" id="product-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <span class="modal-title" id="product-modal-title">Add Product</span>
+      <button class="modal-close" onclick="closeModal('product-modal')">✕</button>
+    </div>
+    <form id="product-form" onsubmit="saveProduct(event)">
+      <div class="modal-body">
+        <input type="hidden" id="product-id">
+        <div class="form-group">
+          <label class="label">Product Name</label>
+          <input class="input" id="p-name" required placeholder="Enter product name">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label">SKU</label>
+            <input class="input font-mono" id="p-sku" required placeholder="e.g. PRD-001">
+          </div>
+          <div class="form-group">
+            <label class="label">Price (USD)</label>
+            <input class="input" id="p-price" type="number" step="0.01" min="0" required placeholder="0.00">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="label">Category</label>
+            <input class="input" id="p-category" required placeholder="e.g. Electronics">
+          </div>
+          <div class="form-group">
+            <label class="label">Initial Stock</label>
+            <input class="input" id="p-stock" type="number" min="0" value="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+            <label class="label" style="margin:0">Description</label>
+            <button type="button" class="btn btn-ghost btn-sm" id="ai-btn" onclick="generateDescription()" style="font-size:12px">🤖 Generate with AI</button>
+          </div>
+          <textarea class="textarea" id="p-description" rows="3" placeholder="Product description…"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('product-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Product</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('products');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let allProducts = [];
+
+  async function loadProducts() {
+    const data = await API.get('/api/products');
+    allProducts = data || [];
+    renderProducts(allProducts);
+
+    const cats = [...new Set(allProducts.map(p => p.category).filter(Boolean))].sort();
+    const sel = document.getElementById('cat-filter');
+    sel.innerHTML = '<option value="">All Categories</option>';
+    cats.forEach(c => sel.innerHTML += `<option value="${c}">${c}</option>`);
+  }
+
+  function renderProducts(products) {
+    const tbody = document.getElementById('products-tbody');
+    if (!products.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">📦</div><div class="empty-text">No products found</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = products.map(p => {
+      const isLow = p.stock <= (p.low_stock_threshold || 10);
+      const stockStyle = isLow ? 'color:var(--danger);font-weight:700' : 'font-weight:500';
+      return `
+        <tr>
+          <td>
+            <div style="font-weight:600">${p.name}</div>
+            <div class="text-muted text-sm truncate" style="max-width:260px">${p.description || '—'}</div>
+          </td>
+          <td><span class="font-mono text-sm text-muted">${p.sku}</span></td>
+          <td><span class="chip">${p.category || '—'}</span></td>
+          <td><strong>${formatCurrency(p.price)}</strong></td>
+          <td><span style="${stockStyle}">${p.stock}</span>${isLow ? ' <span class="badge b-red" style="font-size:10px">Low</span>' : ''}</td>
+          <td>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-secondary btn-sm" onclick="editProduct(${p.id})">Edit</button>
+              <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id}, '${(p.name || '').replace(/'/g, "\\'")}')">Delete</button>
+            </div>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function filterProducts() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const cat = document.getElementById('cat-filter').value;
+    const filtered = allProducts.filter(p =>
+      (!q || p.name.toLowerCase().includes(q) || (p.sku || '').toLowerCase().includes(q) || (p.description || '').toLowerCase().includes(q)) &&
+      (!cat || p.category === cat)
+    );
+    renderProducts(filtered);
+  }
+
+  function openAddModal() {
+    document.getElementById('product-modal-title').textContent = 'Add Product';
+    document.getElementById('product-id').value = '';
+    document.getElementById('product-form').reset();
+    document.getElementById('p-stock').value = '0';
+    openModal('product-modal');
+  }
+
+  function editProduct(id) {
+    const p = allProducts.find(x => x.id === id);
+    if (!p) return;
+    document.getElementById('product-modal-title').textContent = 'Edit Product';
+    document.getElementById('product-id').value = p.id;
+    document.getElementById('p-name').value = p.name;
+    document.getElementById('p-sku').value = p.sku;
+    document.getElementById('p-price').value = p.price;
+    document.getElementById('p-category').value = p.category || '';
+    document.getElementById('p-stock').value = p.stock;
+    document.getElementById('p-description').value = p.description || '';
+    openModal('product-modal');
+  }
+
+  async function saveProduct(e) {
+    e.preventDefault();
+    const id = document.getElementById('product-id').value;
+    const data = {
+      name:          document.getElementById('p-name').value,
+      sku:           document.getElementById('p-sku').value,
+      price:         parseFloat(document.getElementById('p-price').value),
+      category:      document.getElementById('p-category').value,
+      description:   document.getElementById('p-description').value,
+      initial_stock: parseInt(document.getElementById('p-stock').value) || 0
+    };
+    const res = id ? await API.put('/api/products/' + id, data) : await API.post('/api/products', data);
+    if (res && !res.error) {
+      showToast(id ? 'Product updated' : 'Product created', 'success');
+      closeModal('product-modal');
+      loadProducts();
+    } else {
+      showToast(res?.error || 'Failed to save product', 'error');
+    }
+  }
+
+  async function deleteProduct(id, name) {
+    if (!confirm(`Delete "${name}"? This cannot be undone.`)) return;
+    const res = await API.delete('/api/products/' + id);
+    if (res && !res.error) {
+      showToast('Product deleted', 'success');
+      loadProducts();
+    } else {
+      showToast(res?.error || 'Failed to delete', 'error');
+    }
+  }
+
+  async function generateDescription() {
+    const name = document.getElementById('p-name').value.trim();
+    const category = document.getElementById('p-category').value.trim();
+    const price = document.getElementById('p-price').value;
+    if (!name) { showToast('Enter a product name first', 'info'); return; }
+    const btn = document.getElementById('ai-btn');
+    btn.textContent = '⏳ Generating…';
+    btn.disabled = true;
+    const res = await API.post('/api/ai/generate-description', { name, category, price });
+    btn.textContent = '🤖 Generate with AI';
+    btn.disabled = false;
+    if (res && res.description) {
+      document.getElementById('p-description').value = res.description;
+      showToast('Description generated!', 'success');
+    } else {
+      showToast(res?.error || 'AI generation failed', 'error');
+    }
+  }
+
+  loadProducts();
+</script>
+</body>
+</html>

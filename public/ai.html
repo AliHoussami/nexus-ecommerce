@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Assistant — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+
+  <!-- Main AI layout -->
+  <div class="main-wrap" style="flex-direction:row;overflow:hidden">
+
+    <!-- Conversation history sidebar -->
+    <div class="conv-sidebar">
+      <div style="padding:14px;border-bottom:1px solid var(--border)">
+        <button class="btn btn-primary" style="width:100%;justify-content:center;gap:8px" onclick="newConversation()">
+          <span>✏️</span> New Chat
+        </button>
+      </div>
+
+      <div style="flex:1;overflow-y:auto;padding:8px" id="conv-list">
+        <div class="empty-state" style="padding:24px 12px"><div class="empty-icon" style="font-size:28px">💬</div><div class="empty-text">No conversations yet</div></div>
+      </div>
+
+      <!-- Quick Tools -->
+      <div style="padding:14px;border-top:1px solid var(--border)">
+        <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3);margin-bottom:8px">Quick Tools</div>
+        <button class="tool-btn" onclick="openTool('description')">📦 Product Description</button>
+        <button class="tool-btn" onclick="openTool('email')">📧 Marketing Email</button>
+        <button class="tool-btn" onclick="openTool('reply')">💬 Support Reply</button>
+      </div>
+    </div>
+
+    <!-- Chat area -->
+    <div style="flex:1;display:flex;flex-direction:column;overflow:hidden">
+      <!-- Chat header -->
+      <div class="page-header">
+        <div>
+          <div class="page-title">AI Assistant</div>
+          <div class="page-sub" style="display:flex;align-items:center;gap:6px">
+            <span style="width:7px;height:7px;border-radius:50%;background:#10b981;display:inline-block;animation:pulse 2s infinite"></span>
+            Powered by Ollama — your data stays local
+          </div>
+        </div>
+        <div class="header-actions">
+          <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+        </div>
+      </div>
+
+      <!-- Messages -->
+      <div class="chat-area" id="chat-messages">
+        <!-- Welcome message -->
+        <div class="msg ai" id="welcome-msg">
+          <div class="msg-avatar">⚡</div>
+          <div class="msg-bubble">
+            <strong>Hi, I'm Nexus AI!</strong> I have direct access to your store's live data.<br><br>
+            Try asking me things like:<br>
+            <span style="display:inline-flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+              <span onclick="quickAsk('What tasks are in progress?')" style="background:var(--accent-light);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);transition:all .15s" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='var(--accent-light)';this.style.color='var(--accent)'">What tasks are in progress?</span>
+              <span onclick="quickAsk('Which products are low on stock?')" style="background:var(--accent-light);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);transition:all .15s" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='var(--accent-light)';this.style.color='var(--accent)'">Which products are low on stock?</span>
+              <span onclick="quickAsk('What are our pending orders?')" style="background:var(--accent-light);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);transition:all .15s" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='var(--accent-light)';this.style.color='var(--accent)'">What are our pending orders?</span>
+              <span onclick="quickAsk('Show me our total revenue')" style="background:var(--accent-light);color:var(--accent);padding:4px 10px;border-radius:20px;font-size:12.5px;cursor:pointer;border:1px solid var(--accent);transition:all .15s" onmouseover="this.style.background='var(--accent)';this.style.color='#fff'" onmouseout="this.style.background='var(--accent-light)';this.style.color='var(--accent)'">Show me our total revenue</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="chat-input-wrap">
+        <div class="chat-input-box">
+          <textarea class="chat-textarea" id="chat-input" rows="1"
+            placeholder="Ask anything about your store..."
+            onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+          <button class="chat-send" id="send-btn" onclick="sendMessage()" title="Send (Enter)">
+            ➤
+          </button>
+        </div>
+        <div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--text-3)">
+          Enter to send · Shift+Enter for new line
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Tool Modal -->
+<div class="modal-overlay hidden" id="tool-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-head">
+      <span class="modal-title" id="tool-modal-title">Quick Tool</span>
+      <button class="modal-close" onclick="closeModal('tool-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="tool-modal-body"></div>
+  </div>
+</div>
+
+<style>
+@keyframes pulse { 0%,100%{opacity:1}50%{opacity:.4} }
+</style>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('ai');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let currentConvId = null;
+
+  /* ---- Conversation list ---- */
+  async function loadConversations() {
+    const convs = await API.get('/api/ai/conversations') || [];
+    const list = document.getElementById('conv-list');
+    if (!convs.length) {
+      list.innerHTML = '<div class="empty-state" style="padding:24px 12px"><div class="empty-icon" style="font-size:28px">💬</div><div class="empty-text">No conversations yet</div></div>';
+      return;
+    }
+    list.innerHTML = convs.map(c => `
+      <div class="conv-item ${c.id === currentConvId ? 'active' : ''}" onclick="loadConversation(${c.id})">
+        <span style="font-size:14px;flex-shrink:0">💬</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${c.title}</span>
+        <button class="conv-del" onclick="event.stopPropagation();deleteConv(${c.id})">✕</button>
+      </div>`).join('');
+  }
+
+  async function loadConversation(id) {
+    currentConvId = id;
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML = '';
+    const messages = await API.get('/api/ai/conversations/' + id + '/messages') || [];
+    messages.forEach(m => appendBubble(m.role, m.content, false));
+    msgs.scrollTop = msgs.scrollHeight;
+    loadConversations();
+  }
+
+  function newConversation() {
+    currentConvId = null;
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML = `
+      <div class="msg ai">
+        <div class="msg-avatar">⚡</div>
+        <div class="msg-bubble">New conversation started. How can I help you?</div>
+      </div>`;
+    loadConversations();
+  }
+
+  async function deleteConv(id) {
+    await API.delete('/api/ai/conversations/' + id);
+    if (currentConvId === id) newConversation();
+    loadConversations();
+  }
+
+  /* ---- Message rendering ---- */
+  function appendBubble(role, content, stream = false) {
+    const container = document.getElementById('chat-messages');
+    const isUser = role === 'user';
+    const div = document.createElement('div');
+    div.className = `msg ${isUser ? 'user' : 'ai'}`;
+
+    const bubbleContent = isUser ? escapeHtml(content) : renderMarkdown(content);
+
+    div.innerHTML = `
+      <div class="msg-avatar">${isUser ? '👤' : '⚡'}</div>
+      <div class="msg-bubble" id="${stream ? 'streaming-bubble' : ''}">${bubbleContent}${stream ? '<span class="typing-cursor"></span>' : ''}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+  }
+
+  function appendTypingIndicator() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'msg ai';
+    div.id = 'typing-indicator';
+    div.innerHTML = `
+      <div class="msg-avatar">⚡</div>
+      <div class="msg-bubble">
+        <div class="typing-dots">
+          <span></span><span></span><span></span>
+        </div>
+      </div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function escapeHtml(t) {
+    return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  /* ---- Send message with streaming ---- */
+  async function sendMessage() {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    // Clear welcome message on first send
+    const welcome = document.getElementById('welcome-msg');
+    if (welcome) welcome.remove();
+
+    input.value = '';
+    input.style.height = 'auto';
+
+    const sendBtn = document.getElementById('send-btn');
+    sendBtn.disabled = true;
+
+    // Show user bubble
+    appendBubble('user', message, false);
+
+    // Show typing indicator
+    appendTypingIndicator();
+
+    // Stream response
+    let aiDiv = null;
+    let bubbleEl = null;
+    let streamedContent = '';
+    let started = false;
+
+    await streamChat(
+      message,
+      currentConvId,
+      // onToken
+      (token) => {
+        // Remove typing indicator on first token
+        if (!started) {
+          started = true;
+          const indicator = document.getElementById('typing-indicator');
+          if (indicator) indicator.remove();
+          aiDiv = appendBubble('ai', '', true);
+          bubbleEl = aiDiv.querySelector('.msg-bubble');
+        }
+        streamedContent += token;
+        // Render markdown progressively
+        if (bubbleEl) {
+          bubbleEl.innerHTML = renderMarkdown(streamedContent) + '<span class="typing-cursor"></span>';
+          document.getElementById('chat-messages').scrollTop = 999999;
+        }
+      },
+      // onDone
+      (newConvId) => {
+        currentConvId = newConvId;
+        sendBtn.disabled = false;
+        // Remove cursor
+        if (bubbleEl) {
+          bubbleEl.innerHTML = renderMarkdown(streamedContent);
+        }
+        // If never streamed (empty response)
+        if (!started) {
+          const indicator = document.getElementById('typing-indicator');
+          if (indicator) indicator.remove();
+        }
+        loadConversations();
+      },
+      // onError
+      (errMsg) => {
+        sendBtn.disabled = false;
+        const indicator = document.getElementById('typing-indicator');
+        if (indicator) indicator.remove();
+        if (!started) {
+          appendBubble('ai', '⚠️ **Error:** ' + errMsg + '\n\nMake sure Ollama is running with `ollama serve`.');
+        }
+      }
+    );
+  }
+
+  function quickAsk(text) {
+    document.getElementById('chat-input').value = text;
+    sendMessage();
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+  }
+
+  /* ---- Quick Tools ---- */
+  const TOOLS = {
+    description: {
+      title: '📦 Generate Product Description',
+      body: `
+        <div class="form-group"><label class="label">Product Name</label><input class="input" id="td-name" placeholder="e.g. Wireless Headphones"></div>
+        <div class="form-row">
+          <div class="form-group"><label class="label">Category</label><input class="input" id="td-category" placeholder="e.g. Electronics"></div>
+          <div class="form-group"><label class="label">Price ($)</label><input class="input" id="td-price" type="number" placeholder="99.99"></div>
+        </div>
+        <div class="form-group"><label class="label">Keywords (optional)</label><input class="input" id="td-keywords" placeholder="wireless, noise-cancelling, premium"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="runTool('description')">🤖 Generate Description</button>
+        <div id="tool-result" class="hidden" style="margin-top:16px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);font-size:13.5px;line-height:1.7;color:var(--text)"></div>`
+    },
+    email: {
+      title: '📧 Generate Marketing Email',
+      body: `
+        <div class="form-group">
+          <label class="label">Campaign Type</label>
+          <select class="select" id="te-type"><option>Spring Sale</option><option>New Arrival</option><option>Flash Sale</option><option>Loyalty Reward</option><option>Re-engagement</option></select>
+        </div>
+        <div class="form-group"><label class="label">Subject / Topic</label><input class="input" id="te-subject" placeholder="e.g. 20% off all electronics this weekend"></div>
+        <div class="form-group"><label class="label">Additional Details</label><textarea class="textarea" id="te-details" rows="3" placeholder="Products featured, discount codes, dates..."></textarea></div>
+        <button class="btn btn-primary" style="width:100%" onclick="runTool('email')">🤖 Generate Email</button>
+        <div id="tool-result" class="hidden" style="margin-top:16px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);font-size:13.5px;line-height:1.7;color:var(--text);white-space:pre-wrap"></div>`
+    },
+    reply: {
+      title: '💬 Generate Support Reply',
+      body: `
+        <div class="form-group"><label class="label">Customer Name</label><input class="input" id="tr-name" placeholder="e.g. John Doe"></div>
+        <div class="form-group"><label class="label">Customer Message</label><textarea class="textarea" id="tr-message" rows="4" placeholder="Paste the customer's message here..."></textarea></div>
+        <div class="form-group"><label class="label">Order Context (optional)</label><input class="input" id="tr-order" placeholder="e.g. Order ORD-2024-001, status: shipped"></div>
+        <button class="btn btn-primary" style="width:100%" onclick="runTool('reply')">🤖 Generate Reply</button>
+        <div id="tool-result" class="hidden" style="margin-top:16px;padding:14px;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-md);font-size:13.5px;line-height:1.7;color:var(--text)"></div>`
+    }
+  };
+
+  function openTool(type) {
+    const t = TOOLS[type];
+    document.getElementById('tool-modal-title').textContent = t.title;
+    document.getElementById('tool-modal-body').innerHTML = t.body;
+    openModal('tool-modal');
+  }
+
+  async function runTool(type) {
+    const resultEl = document.getElementById('tool-result');
+    resultEl.textContent = '⏳ Generating...';
+    resultEl.classList.remove('hidden');
+
+    let result;
+    if (type === 'description') {
+      result = await API.post('/api/ai/generate-description', {
+        name: document.getElementById('td-name').value,
+        category: document.getElementById('td-category').value,
+        price: document.getElementById('td-price').value,
+        keywords: document.getElementById('td-keywords').value
+      });
+      resultEl.textContent = result?.description || result?.error || 'Error generating description.';
+    } else if (type === 'email') {
+      result = await API.post('/api/ai/generate-email', {
+        campaign_type: document.getElementById('te-type').value,
+        subject: document.getElementById('te-subject').value,
+        details: document.getElementById('te-details').value
+      });
+      resultEl.textContent = result?.email || result?.error || 'Error generating email.';
+    } else if (type === 'reply') {
+      result = await API.post('/api/ai/suggest-reply', {
+        customer_name: document.getElementById('tr-name').value,
+        customer_message: document.getElementById('tr-message').value,
+        order_info: document.getElementById('tr-order').value
+      });
+      resultEl.textContent = result?.suggestion || result?.error || 'Error generating reply.';
+    }
+  }
+
+  /* ---- Init ---- */
+  loadConversations();
+</script>
+</body>
+</html>

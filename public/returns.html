@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Returns & Refunds — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main-wrap">
+
+    <header class="page-header">
+      <div>
+        <div class="page-title">Returns & Refunds</div>
+        <div class="page-sub">Process and track return requests</div>
+      </div>
+      <div class="header-actions">
+        <select class="select" id="status-filter" style="width:160px" onchange="filterReturns()">
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="completed">Completed</option>
+        </select>
+        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>#ID</th>
+              <th>Customer</th>
+              <th>Order #</th>
+              <th>Reason</th>
+              <th style="text-align:right">Refund Amount</th>
+              <th>Status</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="returns-tbody">
+            <tr><td colspan="7" style="text-align:center;padding:40px;color:var(--text-3)">Loading returns…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Process Return Modal -->
+<div class="modal-overlay hidden" id="return-modal">
+  <div class="modal" style="max-width:540px">
+    <div class="modal-head">
+      <span class="modal-title">Return Request</span>
+      <button class="modal-close" onclick="closeModal('return-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="return-detail-content">
+        <div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>
+      </div>
+      <hr class="divider">
+      <div style="font-weight:600;margin-bottom:14px">Update Status</div>
+      <div class="form-group">
+        <label class="label">New Status</label>
+        <select class="select" id="return-status-select">
+          <option value="pending">Pending</option>
+          <option value="approved">Approved</option>
+          <option value="rejected">Rejected</option>
+          <option value="completed">Completed</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="label">Internal Notes (optional)</label>
+        <textarea class="textarea" id="return-notes" rows="3" placeholder="Add any notes about this return…"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('return-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="updateReturnStatus()">Update Return</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('returns');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let allReturns = [];
+  let currentReturnId = null;
+
+  async function loadReturns() {
+    const data = await API.get('/api/returns');
+    allReturns = data || [];
+    renderReturns(allReturns);
+  }
+
+  function renderReturns(returns) {
+    const tbody = document.getElementById('returns-tbody');
+    if (!returns.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">↩️</div><div class="empty-text">No return requests found</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = returns.map(r => `
+      <tr>
+        <td><span class="font-mono text-muted">#${r.id}</span></td>
+        <td>
+          <div style="font-weight:500">${r.customer_name || '—'}</div>
+          <div class="text-muted text-sm">${r.customer_email || ''}</div>
+        </td>
+        <td><span class="font-mono text-accent">${r.order_number || '—'}</span></td>
+        <td style="max-width:200px">
+          <div class="truncate text-sm" title="${r.reason || ''}">${r.reason || '—'}</div>
+        </td>
+        <td style="text-align:right"><strong>${formatCurrency(r.refund_amount)}</strong></td>
+        <td>${statusBadge(r.status)}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="viewReturn(${r.id})">Process</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterReturns() {
+    const s = document.getElementById('status-filter').value;
+    renderReturns(s ? allReturns.filter(r => r.status === s) : allReturns);
+  }
+
+  async function viewReturn(id) {
+    currentReturnId = id;
+    document.getElementById('return-detail-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>';
+    openModal('return-modal');
+
+    const r = await API.get('/api/returns/' + id);
+    if (!r) return;
+
+    document.getElementById('return-status-select').value = r.status;
+    document.getElementById('return-notes').value = r.notes || '';
+
+    document.getElementById('return-detail-content').innerHTML = `
+      <div class="form-row" style="margin-bottom:16px">
+        <div>
+          <div class="label">Customer</div>
+          <div style="font-weight:600">${r.customer_name || '—'}</div>
+          <div class="text-muted text-sm">${r.customer_email || ''}</div>
+          ${r.customer_phone ? `<div class="text-muted text-sm">${r.customer_phone}</div>` : ''}
+        </div>
+        <div>
+          <div class="label">Order</div>
+          <div class="font-mono text-accent" style="font-weight:600">${r.order_number || '—'}</div>
+          <div class="text-muted text-sm">${r.order_date ? formatDate(r.order_date) : ''}</div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:16px">
+        <div>
+          <div class="label">Current Status</div>
+          ${statusBadge(r.status)}
+        </div>
+        <div>
+          <div class="label">Refund Amount</div>
+          <div style="font-size:18px;font-weight:700;color:var(--danger-text)">${formatCurrency(r.refund_amount)}</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <div class="label">Return Reason</div>
+        <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:var(--r-sm);padding:12px;font-size:13.5px;line-height:1.6">${r.reason || '—'}</div>
+      </div>
+      <div class="form-row">
+        <div>
+          <div class="label">Submitted</div>
+          <div class="text-sm">${formatDate(r.created_at)}</div>
+        </div>
+        ${r.updated_at && r.updated_at !== r.created_at ? `
+          <div>
+            <div class="label">Last Updated</div>
+            <div class="text-sm">${formatDate(r.updated_at)}</div>
+          </div>` : '<div></div>'}
+      </div>
+    `;
+  }
+
+  async function updateReturnStatus() {
+    if (!currentReturnId) return;
+    const res = await API.put('/api/returns/' + currentReturnId + '/status', {
+      status: document.getElementById('return-status-select').value,
+      notes:  document.getElementById('return-notes').value
+    });
+    if (res && !res.error) {
+      showToast('Return status updated', 'success');
+      closeModal('return-modal');
+      loadReturns();
+    } else {
+      showToast(res?.error || 'Failed to update return', 'error');
+    }
+  }
+
+  loadReturns();
+</script>
+</body>
+</html>

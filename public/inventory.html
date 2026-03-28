@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Inventory — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main-wrap">
+
+    <header class="page-header">
+      <div>
+        <div class="page-title">Inventory</div>
+        <div class="page-sub">Monitor stock levels and thresholds</div>
+      </div>
+      <div class="header-actions">
+        <button class="btn btn-secondary" id="low-stock-btn" onclick="toggleLowStock()">⚠️ Low Stock Only</button>
+        <input class="input" id="search-input" style="width:220px" placeholder="Search products…" oninput="filterInventory()">
+        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+      </div>
+    </header>
+
+    <div class="page-content">
+
+      <!-- Low stock banner -->
+      <div id="low-stock-banner" class="hidden" style="margin-bottom:20px;padding:14px 18px;background:var(--warning-bg);border:1.5px solid var(--warning);border-radius:var(--r-md);display:flex;align-items:center;gap:12px">
+        <span style="font-size:22px">⚠️</span>
+        <div>
+          <div style="font-weight:600;color:var(--warning-text)">Low Stock Alert</div>
+          <div style="font-size:13px;color:var(--warning-text);opacity:.85" id="low-stock-msg">Some items need restocking</div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th>SKU</th>
+              <th>Category</th>
+              <th style="text-align:center">Stock</th>
+              <th style="text-align:center">Min Threshold</th>
+              <th>Status</th>
+              <th style="min-width:120px">Stock Level</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="inventory-tbody">
+            <tr><td colspan="8" style="text-align:center;padding:40px;color:var(--text-3)">Loading inventory…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Adjust Stock Modal -->
+<div class="modal-overlay hidden" id="stock-modal">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-head">
+      <span class="modal-title" id="stock-modal-title">Adjust Stock</span>
+      <button class="modal-close" onclick="closeModal('stock-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="stock-product-id">
+      <div class="form-group">
+        <label class="label">New Quantity</label>
+        <input class="input" id="stock-qty" type="number" min="0" placeholder="Enter new stock quantity">
+      </div>
+      <div class="form-group">
+        <label class="label">Low Stock Threshold</label>
+        <input class="input" id="stock-threshold" type="number" min="0" placeholder="Alert when stock falls below this">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('stock-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStock()">Update Stock</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('inventory');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let allInventory = [];
+  let showingLowStock = false;
+
+  async function loadInventory() {
+    const data = await API.get('/api/inventory');
+    allInventory = data || [];
+
+    const lowCount = allInventory.filter(i => i.quantity <= i.low_stock_threshold).length;
+    const banner = document.getElementById('low-stock-banner');
+    if (lowCount > 0) {
+      banner.classList.remove('hidden');
+      banner.style.display = 'flex';
+      document.getElementById('low-stock-msg').textContent = lowCount + ' item' + (lowCount === 1 ? '' : 's') + ' need restocking';
+    } else {
+      banner.classList.add('hidden');
+    }
+
+    renderInventory(allInventory);
+  }
+
+  function renderInventory(items) {
+    const tbody = document.getElementById('inventory-tbody');
+    if (!items.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🏭</div><div class="empty-text">No inventory items found</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = items.map(i => {
+      const isLow = i.quantity <= i.low_stock_threshold;
+      const pct = i.low_stock_threshold > 0
+        ? Math.min(100, Math.round((i.quantity / (i.low_stock_threshold * 3)) * 100))
+        : (i.quantity > 0 ? 100 : 0);
+      const barClass = isLow ? 'low' : 'ok';
+      const stockStyle = isLow ? 'color:var(--danger);font-weight:700' : 'font-weight:600';
+      const statusHtml = isLow
+        ? '<span class="badge b-red">⚠ Low Stock</span>'
+        : '<span class="badge b-green">✓ In Stock</span>';
+      return `
+        <tr style="${isLow ? 'background:rgba(239,68,68,0.04)' : ''}">
+          <td style="font-weight:500">${i.product_name}</td>
+          <td><span class="font-mono text-sm text-muted">${i.sku}</span></td>
+          <td><span class="chip">${i.category || '—'}</span></td>
+          <td style="text-align:center;${stockStyle}">${i.quantity}</td>
+          <td style="text-align:center" class="text-muted">${i.low_stock_threshold}</td>
+          <td>${statusHtml}</td>
+          <td style="min-width:120px">
+            <div class="stock-bar-wrap">
+              <div class="stock-bar ${barClass}" style="width:${pct}%"></div>
+            </div>
+          </td>
+          <td>
+            <button class="btn btn-secondary btn-sm" onclick="openStockModal(${i.product_id}, '${(i.product_name || '').replace(/'/g, "\\'")}', ${i.quantity}, ${i.low_stock_threshold})">Adjust</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function filterInventory() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    let items = showingLowStock ? allInventory.filter(i => i.quantity <= i.low_stock_threshold) : allInventory;
+    if (q) items = items.filter(i => (i.product_name || '').toLowerCase().includes(q) || (i.sku || '').toLowerCase().includes(q));
+    renderInventory(items);
+  }
+
+  function toggleLowStock() {
+    showingLowStock = !showingLowStock;
+    const btn = document.getElementById('low-stock-btn');
+    btn.textContent = showingLowStock ? '📦 Show All Items' : '⚠️ Low Stock Only';
+    if (showingLowStock) {
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-primary');
+    } else {
+      btn.classList.remove('btn-primary');
+      btn.classList.add('btn-secondary');
+    }
+    filterInventory();
+  }
+
+  function openStockModal(productId, name, qty, threshold) {
+    document.getElementById('stock-product-id').value = productId;
+    document.getElementById('stock-modal-title').textContent = 'Adjust Stock: ' + name;
+    document.getElementById('stock-qty').value = qty;
+    document.getElementById('stock-threshold').value = threshold;
+    openModal('stock-modal');
+  }
+
+  async function saveStock() {
+    const id = document.getElementById('stock-product-id').value;
+    const qty = parseInt(document.getElementById('stock-qty').value);
+    const threshold = parseInt(document.getElementById('stock-threshold').value);
+    if (isNaN(qty) || qty < 0) { showToast('Please enter a valid quantity', 'error'); return; }
+    const res = await API.put('/api/inventory/' + id, {
+      quantity: qty,
+      low_stock_threshold: threshold
+    });
+    if (res && !res.error) {
+      showToast('Stock updated successfully', 'success');
+      closeModal('stock-modal');
+      loadInventory();
+    } else {
+      showToast(res?.error || 'Failed to update stock', 'error');
+    }
+  }
+
+  loadInventory();
+</script>
+</body>
+</html>

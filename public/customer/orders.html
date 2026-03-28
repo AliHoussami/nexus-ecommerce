@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Orders — Nexus Store</title>
+  <link rel="stylesheet" href="/css/customer.css">
+</head>
+<body>
+<script src="/js/customer-common.js"></script>
+<script>renderCustomerNav('orders');</script>
+
+<div class="c-page">
+  <div class="c-container">
+    <div class="c-page-head" style="display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div class="c-page-title">My Orders</div>
+        <div class="c-page-sub">Track and manage all your purchases</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <input class="c-input" id="search-input" placeholder="Search orders…" style="width:200px" oninput="filterOrders()">
+        <select class="c-input c-select" id="status-filter" style="width:160px" onchange="filterOrders()">
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="processing">Processing</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="c-table-wrap">
+      <table class="c-table">
+        <thead>
+          <tr>
+            <th>Order</th>
+            <th>Date</th>
+            <th>Status</th>
+            <th style="text-align:right">Total</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="orders-tbody">
+          <tr><td colspan="5" style="text-align:center;padding:50px;color:var(--text-3)">Loading orders…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  checkCustomerAuth();
+  let allOrders = [];
+
+  async function loadOrders() {
+    const data = await CAPI.get('/api/customer/orders');
+    allOrders = data || [];
+    renderOrders(allOrders);
+  }
+
+  function renderOrders(orders) {
+    const tbody = document.getElementById('orders-tbody');
+    if (!orders.length) {
+      tbody.innerHTML = `<tr><td colspan="5"><div class="c-empty"><div class="c-empty-icon">📦</div><div class="c-empty-text">No orders found</div><div class="c-empty-sub"><a href="/customer/shop.html" class="c-btn c-btn-primary c-btn-sm" style="margin-top:12px">Start Shopping</a></div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = orders.map(o => `
+      <tr style="cursor:pointer" onclick="window.location.href='/customer/order.html?id=${o.id}'">
+        <td>
+          <div style="font-weight:700;color:var(--text)">${o.order_number}</div>
+        </td>
+        <td style="color:var(--text-2)">${cFormatDate(o.created_at)}</td>
+        <td>${cStatusBadge(o.status)}</td>
+        <td style="text-align:right;font-weight:700">${cFormatCurrency(o.total)}</td>
+        <td style="text-align:right">
+          <a href="/customer/order.html?id=${o.id}" class="c-btn c-btn-secondary c-btn-sm" onclick="event.stopPropagation()">View Details →</a>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterOrders() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const s = document.getElementById('status-filter').value;
+    renderOrders(allOrders.filter(o =>
+      (!s || o.status === s) &&
+      (!q || o.order_number.toLowerCase().includes(q))
+    ));
+  }
+
+  loadOrders();
+</script>
+</body>
+</html>

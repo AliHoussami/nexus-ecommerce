@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Customers — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main-wrap">
+
+    <header class="page-header">
+      <div>
+        <div class="page-title">Customers</div>
+        <div class="page-sub">Manage your customer base</div>
+      </div>
+      <div class="header-actions">
+        <input class="input" id="search-input" style="width:220px" placeholder="Search customers…" oninput="filterCustomers()">
+        <button class="btn btn-primary" onclick="openAddModal()">+ Add Customer</button>
+        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Customer</th>
+              <th>Phone</th>
+              <th style="text-align:center">Orders</th>
+              <th style="text-align:right">Total Spent</th>
+              <th>Member Since</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="customers-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-3)">Loading customers…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Add/Edit Customer Modal -->
+<div class="modal-overlay hidden" id="customer-modal">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-head">
+      <span class="modal-title" id="customer-modal-title">Add Customer</span>
+      <button class="modal-close" onclick="closeModal('customer-modal')">✕</button>
+    </div>
+    <form id="customer-form" onsubmit="saveCustomer(event)">
+      <div class="modal-body">
+        <input type="hidden" id="customer-id">
+        <div class="form-group">
+          <label class="label">Full Name</label>
+          <input class="input" id="c-name" required placeholder="Enter full name">
+        </div>
+        <div class="form-group">
+          <label class="label">Email Address</label>
+          <input class="input" id="c-email" type="email" required placeholder="email@example.com">
+        </div>
+        <div class="form-group">
+          <label class="label">Phone Number</label>
+          <input class="input" id="c-phone" placeholder="+1 (555) 000-0000">
+        </div>
+        <div class="form-group">
+          <label class="label">Address</label>
+          <textarea class="textarea" id="c-address" rows="3" placeholder="Street, City, State, ZIP"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-ghost" onclick="closeModal('customer-modal')">Cancel</button>
+        <button type="submit" class="btn btn-primary">Save Customer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Customer Detail Modal -->
+<div class="modal-overlay hidden" id="detail-modal">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-head">
+      <span class="modal-title" id="detail-modal-title">Customer Details</span>
+      <button class="modal-close" onclick="closeModal('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="detail-modal-content">
+      <div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('detail-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('customers');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let allCustomers = [];
+
+  async function loadCustomers() {
+    const data = await API.get('/api/customers');
+    allCustomers = data || [];
+    renderCustomers(allCustomers);
+  }
+
+  function renderCustomers(customers) {
+    const tbody = document.getElementById('customers-tbody');
+    if (!customers.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👥</div><div class="empty-text">No customers found</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = customers.map(c => `
+      <tr>
+        <td>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div class="avatar-sm">${(c.name || '?').charAt(0).toUpperCase()}</div>
+            <div>
+              <div style="font-weight:600">${c.name}</div>
+              <div class="text-muted text-sm">${c.email}</div>
+            </div>
+          </div>
+        </td>
+        <td class="text-muted">${c.phone || '—'}</td>
+        <td style="text-align:center;font-weight:600">${c.total_orders || 0}</td>
+        <td style="text-align:right"><strong>${formatCurrency(c.total_spent)}</strong></td>
+        <td class="text-muted">${formatDate(c.created_at)}</td>
+        <td>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-secondary btn-sm" onclick="viewCustomer(${c.id})">View</button>
+            <button class="btn btn-ghost btn-sm" onclick="editCustomer(${c.id})">Edit</button>
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterCustomers() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const filtered = allCustomers.filter(c =>
+      !q ||
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.email || '').toLowerCase().includes(q) ||
+      (c.phone || '').toLowerCase().includes(q)
+    );
+    renderCustomers(filtered);
+  }
+
+  function openAddModal() {
+    document.getElementById('customer-modal-title').textContent = 'Add Customer';
+    document.getElementById('customer-id').value = '';
+    document.getElementById('customer-form').reset();
+    openModal('customer-modal');
+  }
+
+  function editCustomer(id) {
+    const c = allCustomers.find(x => x.id === id);
+    if (!c) return;
+    document.getElementById('customer-modal-title').textContent = 'Edit Customer';
+    document.getElementById('customer-id').value = c.id;
+    document.getElementById('c-name').value = c.name;
+    document.getElementById('c-email').value = c.email;
+    document.getElementById('c-phone').value = c.phone || '';
+    document.getElementById('c-address').value = c.address || '';
+    openModal('customer-modal');
+  }
+
+  async function saveCustomer(e) {
+    e.preventDefault();
+    const id = document.getElementById('customer-id').value;
+    const data = {
+      name:    document.getElementById('c-name').value,
+      email:   document.getElementById('c-email').value,
+      phone:   document.getElementById('c-phone').value,
+      address: document.getElementById('c-address').value
+    };
+    const res = id ? await API.put('/api/customers/' + id, data) : await API.post('/api/customers', data);
+    if (res && !res.error) {
+      showToast(id ? 'Customer updated' : 'Customer added', 'success');
+      closeModal('customer-modal');
+      loadCustomers();
+    } else {
+      showToast(res?.error || 'Failed to save customer', 'error');
+    }
+  }
+
+  async function viewCustomer(id) {
+    document.getElementById('detail-modal-title').textContent = 'Customer Details';
+    document.getElementById('detail-modal-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>';
+    openModal('detail-modal');
+
+    const c = await API.get('/api/customers/' + id);
+    if (!c) return;
+
+    document.getElementById('detail-modal-title').textContent = c.name;
+
+    const orders = c.orders || [];
+    const orderList = orders.length
+      ? orders.map(o => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px;background:var(--surface-2);border-radius:var(--r-sm);margin-bottom:8px">
+          <div>
+            <div class="font-mono text-accent" style="font-size:13px;font-weight:600">${o.order_number}</div>
+            <div class="text-muted text-sm">${formatDate(o.created_at)}</div>
+          </div>
+          <div style="text-align:right">
+            ${statusBadge(o.status)}
+            <div style="font-weight:700;margin-top:4px">${formatCurrency(o.total)}</div>
+          </div>
+        </div>
+      `).join('')
+      : '<div class="empty-state" style="padding:24px"><div class="empty-icon">🛍️</div><div class="empty-text">No orders yet</div></div>';
+
+    document.getElementById('detail-modal-content').innerHTML = `
+      <div class="form-row" style="margin-bottom:18px">
+        <div>
+          <div class="label">Email</div>
+          <div>${c.email}</div>
+        </div>
+        <div>
+          <div class="label">Phone</div>
+          <div>${c.phone || '—'}</div>
+        </div>
+      </div>
+      <div class="form-row" style="margin-bottom:18px">
+        <div>
+          <div class="label">Member Since</div>
+          <div>${formatDate(c.created_at)}</div>
+        </div>
+        <div>
+          <div class="label">Total Spent</div>
+          <div style="font-weight:700;color:var(--accent)">${formatCurrency(c.total_spent)}</div>
+        </div>
+      </div>
+      ${c.address ? `
+        <div class="form-group">
+          <div class="label">Address</div>
+          <div class="text-sm">${c.address}</div>
+        </div>` : ''}
+      <hr class="divider">
+      <div style="font-weight:600;margin-bottom:12px">Order History (${orders.length})</div>
+      ${orderList}
+    `;
+  }
+
+  loadCustomers();
+</script>
+</body>
+</html>

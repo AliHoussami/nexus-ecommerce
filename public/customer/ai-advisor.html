@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Shopping Advisor — Nexus Store</title>
+  <link rel="stylesheet" href="/css/customer.css">
+  <style>
+    body { overflow: hidden; }
+    .c-page { padding-bottom: 0; overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+  </style>
+</head>
+<body>
+<script src="/js/customer-common.js"></script>
+<script>renderCustomerNav('advisor');</script>
+
+<div class="c-page">
+  <div class="c-container" style="flex:1;display:flex;flex-direction:column;overflow:hidden;padding-top:0">
+    <div class="c-ai-layout" style="flex:1">
+
+      <!-- Left sidebar: conversations + use-cases -->
+      <div class="c-ai-sidebar">
+        <div style="padding:14px;border-bottom:1px solid var(--border)">
+          <button class="c-btn c-btn-primary" style="width:100%;justify-content:center" onclick="newChat()">
+            ✏️ New Search
+          </button>
+        </div>
+
+        <!-- Use-case presets -->
+        <div style="padding:14px;border-bottom:1px solid var(--border)">
+          <div style="font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:var(--text-3);margin-bottom:10px">Shop by Need</div>
+          <div class="c-usecase-grid">
+            <button class="c-usecase-btn" onclick="useCase('gaming')"><span class="uc-icon">🎮</span>Gaming</button>
+            <button class="c-usecase-btn" onclick="useCase('work')"><span class="uc-icon">💼</span>Work</button>
+            <button class="c-usecase-btn" onclick="useCase('student')"><span class="uc-icon">🎓</span>Student</button>
+            <button class="c-usecase-btn" onclick="useCase('home')"><span class="uc-icon">🏠</span>Home</button>
+            <button class="c-usecase-btn" onclick="useCase('gift')"><span class="uc-icon">🎁</span>Gift</button>
+            <button class="c-usecase-btn" onclick="useCase('surprise')"><span class="uc-icon">🎲</span>Surprise!</button>
+          </div>
+        </div>
+
+        <!-- Conversation history -->
+        <div style="flex:1;overflow-y:auto;padding:8px" id="conv-list">
+          <div style="padding:20px 12px;text-align:center;color:var(--text-3);font-size:13px">No recent searches</div>
+        </div>
+      </div>
+
+      <!-- Main chat -->
+      <div class="c-ai-main">
+        <!-- Header -->
+        <div class="c-ai-header">
+          <div class="c-ai-header-title">
+            ✨ AI Shopping Advisor
+            <span class="c-ai-badge">Powered by Ollama</span>
+          </div>
+          <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+        </div>
+
+        <!-- Messages -->
+        <div class="c-chat-area" id="chat-messages">
+          <!-- Welcome -->
+          <div class="c-msg ai" id="welcome-msg">
+            <div class="c-msg-avatar">✨</div>
+            <div class="c-msg-bubble">
+              <strong>Hi! I'm your personal shopping advisor.</strong><br><br>
+              Tell me what you're looking for and your budget — I'll find the perfect match from our catalog!<br><br>
+              <div class="c-chips">
+                <span class="c-chip" onclick="quickAsk('I need a laptop for video editing, budget $1200')">💻 Laptop for editing</span>
+                <span class="c-chip" onclick="quickAsk('Best home office setup under $500')">🏠 Home office setup</span>
+                <span class="c-chip" onclick="quickAsk('Gift ideas for someone who loves gaming, budget $150')">🎁 Gaming gift ideas</span>
+                <span class="c-chip" onclick="quickAsk('What are your best value products under $100?')">💰 Best under $100</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Budget bar + Input -->
+        <div class="c-ai-input-wrap">
+          <div class="c-budget-bar" id="budget-bar">
+            <span class="c-budget-label">💰 Budget:</span>
+            <span style="color:var(--accent);font-size:13px;font-weight:600">$</span>
+            <input class="c-budget-input" id="budget-input" type="number" placeholder="e.g. 500" min="1">
+            <span style="font-size:12px;color:var(--text-3);margin-left:auto">Optional — or mention it in your message</span>
+          </div>
+          <div class="c-ai-input-box">
+            <textarea class="c-ai-textarea" id="chat-input" rows="1"
+              placeholder="Describe what you need… e.g. 'I need a laptop with 32GB RAM and 1TB SSD for video editing'"
+              onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+            <button class="c-ai-send" id="send-btn" onclick="sendMessage()" title="Send">➤</button>
+          </div>
+          <div style="text-align:center;margin-top:8px;font-size:11.5px;color:var(--text-3)">
+            Enter to send · Shift+Enter for new line · AI searches our real product catalog
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  checkCustomerAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let currentConvId = null;
+  let wishlistIds = new Set();
+
+  // Load wishlist state
+  CAPI.get('/api/customer/wishlist').then(items => {
+    wishlistIds = new Set((items || []).map(p => p.id));
+  });
+
+  /* ---- Conversations ---- */
+  async function loadConversations() {
+    const convs = await CAPI.get('/api/customer/ai/conversations') || [];
+    const list = document.getElementById('conv-list');
+    if (!convs.length) {
+      list.innerHTML = '<div style="padding:20px 12px;text-align:center;color:var(--text-3);font-size:13px">No recent searches</div>';
+      return;
+    }
+    list.innerHTML = convs.map(c => `
+      <div class="c-conv-item ${c.id === currentConvId ? 'active' : ''}" onclick="loadConversation(${c.id})">
+        <span style="font-size:14px;flex-shrink:0">🔍</span>
+        <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px">${c.title}</span>
+        <button class="c-conv-del" onclick="event.stopPropagation();deleteConv(${c.id})">✕</button>
+      </div>`).join('');
+  }
+
+  async function loadConversation(id) {
+    currentConvId = id;
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML = '';
+    const messages = await CAPI.get('/api/customer/ai/conversations/' + id + '/messages') || [];
+    messages.forEach(m => appendBubble(m.role, m.content, false));
+    msgs.scrollTop = msgs.scrollHeight;
+    loadConversations();
+  }
+
+  function newChat() {
+    currentConvId = null;
+    const msgs = document.getElementById('chat-messages');
+    msgs.innerHTML = `
+      <div class="c-msg ai">
+        <div class="c-msg-avatar">✨</div>
+        <div class="c-msg-bubble">Starting a new search! What are you looking for today?</div>
+      </div>`;
+    loadConversations();
+  }
+
+  async function deleteConv(id) {
+    await CAPI.delete('/api/customer/ai/conversations/' + id);
+    if (currentConvId === id) newChat();
+    loadConversations();
+  }
+
+  /* ---- Use-case presets ---- */
+  const USE_CASES = {
+    gaming:   "I'm looking for gaming products. What do you have that would enhance my gaming setup?",
+    work:     "I need products for a professional home office setup. What would you recommend?",
+    student:  "I'm a student on a tight budget. What are your best value products for studying and college life?",
+    home:     "I'm looking to improve my home. What home products do you carry and what would you recommend?",
+    gift:     "I need gift ideas. What are your most popular and well-loved products that make great gifts?",
+    surprise: "Surprise me! Recommend your absolute best product right now, no matter the category.",
+  };
+
+  function useCase(type) {
+    document.querySelectorAll('.c-usecase-btn').forEach(b => b.classList.remove('selected'));
+    event.currentTarget.classList.add('selected');
+    document.getElementById('chat-input').value = USE_CASES[type];
+    document.getElementById('chat-input').focus();
+    autoResize(document.getElementById('chat-input'));
+  }
+
+  function quickAsk(text) {
+    document.getElementById('chat-input').value = text;
+    sendMessage();
+  }
+
+  /* ---- Message rendering ---- */
+  function appendBubble(role, content, stream = false) {
+    const container = document.getElementById('chat-messages');
+    const isUser = role === 'user';
+    const div = document.createElement('div');
+    div.className = `c-msg ${isUser ? 'user' : 'ai'}`;
+    const html = isUser
+      ? content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      : cRenderMarkdown(content);
+    div.innerHTML = `
+      <div class="c-msg-avatar">${isUser ? '👤' : '✨'}</div>
+      <div class="c-msg-bubble" id="${stream ? 'streaming-bubble' : ''}">${html}${stream ? '<span class="c-typing-cursor"></span>' : ''}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+  }
+
+  function appendTyping() {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = 'c-msg ai'; div.id = 'typing-indicator';
+    div.innerHTML = `<div class="c-msg-avatar">✨</div><div class="c-msg-bubble"><div class="c-typing-dots"><span></span><span></span><span></span></div></div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function renderProductCards(products) {
+    if (!products || !products.length) return '';
+    return `<div class="c-ai-products">${products.map(p => {
+      const inWishlist = wishlistIds.has(p.id);
+      return `
+        <div class="c-ai-product-card">
+          <div class="c-ai-product-emoji">${categoryEmoji(p.category)}</div>
+          <div class="c-ai-product-cat">${p.category}</div>
+          <div class="c-ai-product-name">${p.name}</div>
+          <div class="c-ai-product-price">${cFormatCurrency(p.price)}</div>
+          <div class="c-ai-product-actions">
+            <button class="c-btn c-btn-primary c-btn-sm" style="flex:1;justify-content:center;font-size:12px"
+              onclick="addToCart(${p.id})">
+              🛒 Add
+            </button>
+            <button class="c-btn c-btn-ghost c-btn-sm" style="justify-content:center;font-size:16px"
+              onclick="wishlistFromCard(this,${p.id})" id="wl-${p.id}" title="${inWishlist ? 'Remove from wishlist' : 'Save to wishlist'}">
+              ${inWishlist ? '♥' : '♡'}
+            </button>
+          </div>
+        </div>`;
+    }).join('')}</div>`;
+  }
+
+  async function wishlistFromCard(btn, productId) {
+    if (wishlistIds.has(productId)) {
+      await CAPI.delete('/api/customer/wishlist/' + productId);
+      wishlistIds.delete(productId);
+      btn.innerHTML = '♡ Save';
+      cShowToast('Removed from wishlist', 'info');
+    } else {
+      await CAPI.post('/api/customer/wishlist', { product_id: productId });
+      wishlistIds.add(productId);
+      btn.innerHTML = '♥ Saved';
+      cShowToast('Saved to wishlist!', 'success');
+    }
+    // Update badge
+    const badge = document.getElementById('wishlist-count');
+    if (badge) { badge.textContent = wishlistIds.size; badge.style.display = wishlistIds.size ? 'flex' : 'none'; }
+  }
+
+  /* ---- Send message ---- */
+  async function sendMessage() {
+    const input   = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    const budget = parseFloat(document.getElementById('budget-input').value) || null;
+
+    const welcome = document.getElementById('welcome-msg');
+    if (welcome) welcome.remove();
+
+    input.value = ''; input.style.height = 'auto';
+    document.getElementById('send-btn').disabled = true;
+
+    appendBubble('user', message);
+    appendTyping();
+
+    let bubbleEl = null;
+    let streamed = '';
+    let started  = false;
+
+    await streamAdvisor(
+      message, currentConvId, budget,
+      // onToken
+      (token) => {
+        if (!started) {
+          started = true;
+          const ind = document.getElementById('typing-indicator');
+          if (ind) ind.remove();
+          const div = appendBubble('ai', '', true);
+          bubbleEl = div.querySelector('.c-msg-bubble');
+        }
+        streamed += token;
+        if (bubbleEl) {
+          bubbleEl.innerHTML = cRenderMarkdown(streamed) + '<span class="c-typing-cursor"></span>';
+          document.getElementById('chat-messages').scrollTop = 999999;
+        }
+      },
+      // onDone
+      (newConvId, products) => {
+        currentConvId = newConvId;
+        document.getElementById('send-btn').disabled = false;
+        if (bubbleEl) {
+          bubbleEl.innerHTML = cRenderMarkdown(streamed) + renderProductCards(products);
+        }
+        if (!started) {
+          const ind = document.getElementById('typing-indicator');
+          if (ind) ind.remove();
+        }
+        document.getElementById('chat-messages').scrollTop = 999999;
+        loadConversations();
+      },
+      // onError
+      (errMsg) => {
+        document.getElementById('send-btn').disabled = false;
+        const ind = document.getElementById('typing-indicator');
+        if (ind) ind.remove();
+        if (!started) appendBubble('ai', '⚠️ **Error:** ' + errMsg + '\n\nMake sure Ollama is running.');
+      }
+    );
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  loadConversations();
+</script>
+</body>
+</html>

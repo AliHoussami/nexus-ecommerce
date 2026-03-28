@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Shop — Nexus Store</title>
+  <link rel="stylesheet" href="/css/customer.css">
+</head>
+<body>
+<script src="/js/customer-common.js"></script>
+<script>renderCustomerNav('shop');</script>
+
+<div class="c-page">
+  <div class="c-container">
+
+    <!-- Header -->
+    <div class="c-page-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <div class="c-page-title" id="page-title">Shop</div>
+        <div class="c-page-sub" id="page-sub">Browse all our products</div>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <input class="c-input" id="search-input" placeholder="Search products…" style="width:200px" oninput="applyFilters()">
+        <select class="c-input c-select" id="sort-select" style="width:160px" onchange="applyFilters()">
+          <option value="">Sort: A-Z</option>
+          <option value="price_asc">Price: Low to High</option>
+          <option value="price_desc">Price: High to Low</option>
+        </select>
+        <a href="/customer/ai-advisor.html" class="c-btn c-btn-primary">✨ AI Advisor</a>
+      </div>
+    </div>
+
+    <div class="c-shop-layout">
+
+      <!-- Filter Sidebar -->
+      <div class="c-filter-panel">
+        <div style="margin-bottom:20px">
+          <div class="c-filter-title">Categories</div>
+          <button class="c-filter-item active" id="cat-all" onclick="setCategory('')">All Products</button>
+          <div id="category-list"></div>
+        </div>
+        <div class="c-divider"></div>
+        <div>
+          <div class="c-filter-title">Max Price</div>
+          <div style="margin-bottom:8px">
+            <input type="range" id="price-range" min="0" max="5000" step="50" value="5000"
+              style="width:100%;accent-color:var(--accent)" oninput="updatePriceDisplay()">
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;color:var(--text-2)">
+            <span>$0</span>
+            <span id="price-display" style="font-weight:700;color:var(--accent)">Any price</span>
+          </div>
+          <button class="c-btn c-btn-ghost c-btn-sm" style="width:100%;justify-content:center;margin-top:10px" onclick="resetFilters()">Reset Filters</button>
+        </div>
+      </div>
+
+      <!-- Product Grid -->
+      <div>
+        <!-- Wishlist toggle -->
+        <div id="wishlist-toggle-bar" style="display:none;margin-bottom:16px">
+          <div style="display:flex;gap:8px">
+            <button class="c-btn c-btn-secondary c-btn-sm" id="btn-all" onclick="showAll()" style="font-weight:700">All Products</button>
+            <button class="c-btn c-btn-ghost c-btn-sm" id="btn-wishlist" onclick="showWishlist()">♡ Wishlist</button>
+          </div>
+        </div>
+
+        <div class="c-products-grid" id="products-grid">
+          <div style="grid-column:1/-1;text-align:center;padding:60px;color:var(--text-3)">Loading products…</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  checkCustomerAuth();
+  let allProducts = [];
+  let allCategories = [];
+  let wishlistIds = new Set();
+  let activeCategory = '';
+  let showingWishlist = false;
+
+  async function loadData() {
+    const [data, wishlist] = await Promise.all([
+      CAPI.get('/api/customer/products'),
+      CAPI.get('/api/customer/wishlist')
+    ]);
+    allProducts = data?.products || [];
+    allCategories = data?.categories || [];
+    wishlistIds = new Set((wishlist || []).map(p => p.id));
+
+    // Render categories
+    const catList = document.getElementById('category-list');
+    catList.innerHTML = allCategories.map(c => `
+      <button class="c-filter-item" id="cat-${c}" onclick="setCategory('${c}')">${categoryEmoji(c)} ${c}</button>
+    `).join('');
+
+    // Check if showing wishlist from URL
+    if (new URLSearchParams(location.search).get('wishlist') === '1') {
+      document.getElementById('wishlist-toggle-bar').style.display = '';
+      showWishlist();
+    } else {
+      applyFilters();
+    }
+  }
+
+  function setCategory(cat) {
+    activeCategory = cat;
+    document.querySelectorAll('.c-filter-item').forEach(el => el.classList.remove('active'));
+    const btn = document.getElementById(cat ? 'cat-' + cat : 'cat-all');
+    if (btn) btn.classList.add('active');
+    applyFilters();
+  }
+
+  function updatePriceDisplay() {
+    const val = parseInt(document.getElementById('price-range').value);
+    document.getElementById('price-display').textContent = val >= 5000 ? 'Any price' : cFormatCurrency(val);
+    applyFilters();
+  }
+
+  function applyFilters() {
+    showingWishlist = false;
+    document.getElementById('wishlist-toggle-bar').style.display = '';
+    const search   = document.getElementById('search-input').value.toLowerCase();
+    const maxPrice = parseInt(document.getElementById('price-range').value);
+    const sort     = document.getElementById('sort-select').value;
+
+    let filtered = allProducts.filter(p =>
+      (!activeCategory || p.category === activeCategory) &&
+      (!search || p.name.toLowerCase().includes(search) || (p.description||'').toLowerCase().includes(search)) &&
+      (maxPrice >= 5000 || p.price <= maxPrice)
+    );
+    if (sort === 'price_asc')  filtered.sort((a,b) => a.price - b.price);
+    if (sort === 'price_desc') filtered.sort((a,b) => b.price - a.price);
+
+    document.getElementById('page-sub').textContent = `${filtered.length} product${filtered.length !== 1 ? 's' : ''} found`;
+    renderProducts(filtered);
+
+    document.getElementById('btn-all')?.classList.add('c-btn-secondary');
+    document.getElementById('btn-all')?.classList.remove('c-btn-ghost');
+    document.getElementById('btn-wishlist')?.classList.add('c-btn-ghost');
+    document.getElementById('btn-wishlist')?.classList.remove('c-btn-secondary');
+  }
+
+  function showWishlist() {
+    showingWishlist = true;
+    const wishlisted = allProducts.filter(p => wishlistIds.has(p.id));
+    document.getElementById('page-sub').textContent = `${wishlisted.length} saved item${wishlisted.length !== 1 ? 's' : ''}`;
+    renderProducts(wishlisted);
+    document.getElementById('btn-wishlist')?.classList.add('c-btn-secondary');
+    document.getElementById('btn-wishlist')?.classList.remove('c-btn-ghost');
+    document.getElementById('btn-all')?.classList.add('c-btn-ghost');
+    document.getElementById('btn-all')?.classList.remove('c-btn-secondary');
+  }
+
+  function showAll() {
+    applyFilters();
+  }
+
+  function renderProducts(products) {
+    const grid = document.getElementById('products-grid');
+    if (!products.length) {
+      grid.innerHTML = `<div style="grid-column:1/-1"><div class="c-empty"><div class="c-empty-icon">🔍</div><div class="c-empty-text">No products found</div><div class="c-empty-sub">Try adjusting your filters or <a href="/customer/ai-advisor.html">ask our AI</a></div></div></div>`;
+      return;
+    }
+    grid.innerHTML = products.map(p => {
+      const inWishlist = wishlistIds.has(p.id);
+      const inStock = p.stock > 0;
+      return `
+        <div class="c-product-card animate-fade-up">
+          <div class="c-product-img">
+            ${categoryEmoji(p.category)}
+            <span class="stock-dot ${inStock ? 'in-stock' : 'out-stock'}">${inStock ? 'In Stock' : 'Out of Stock'}</span>
+          </div>
+          <div class="c-product-body">
+            <div class="c-product-cat">${p.category || 'General'}</div>
+            <div class="c-product-name">${p.name}</div>
+            ${p.description ? `<div class="c-product-desc">${p.description}</div>` : ''}
+            <div class="c-product-footer">
+              <div class="c-product-price">${cFormatCurrency(p.price)}</div>
+              <button class="c-wishlist-btn ${inWishlist ? 'active' : ''}"
+                onclick="toggleWishlist(event, ${p.id})" title="${inWishlist ? 'Remove from wishlist' : 'Add to wishlist'}">
+                ${inWishlist ? '♥' : '♡'}
+              </button>
+            </div>
+            <button class="c-btn c-btn-primary" style="width:100%;justify-content:center;margin-top:10px;font-size:13px"
+              onclick="addToCart(${p.id})" ${!inStock ? 'disabled style="opacity:.5;cursor:not-allowed"' : ''}>
+              ${inStock ? '🛒 Add to Cart' : 'Out of Stock'}
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+  }
+
+  async function toggleWishlist(e, productId) {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    if (wishlistIds.has(productId)) {
+      wishlistIds.delete(productId);
+      await CAPI.delete('/api/customer/wishlist/' + productId);
+      btn.textContent = '♡'; btn.classList.remove('active');
+      cShowToast('Removed from wishlist', 'info');
+    } else {
+      wishlistIds.add(productId);
+      await CAPI.post('/api/customer/wishlist', { product_id: productId });
+      btn.textContent = '♥'; btn.classList.add('active');
+      cShowToast('Added to wishlist!', 'success');
+    }
+    // Update nav badge
+    const badge = document.getElementById('wishlist-count');
+    if (badge) { badge.textContent = wishlistIds.size; badge.style.display = wishlistIds.size ? 'flex' : 'none'; }
+    if (showingWishlist) showWishlist();
+  }
+
+  function resetFilters() {
+    activeCategory = '';
+    document.getElementById('search-input').value = '';
+    document.getElementById('sort-select').value = '';
+    document.getElementById('price-range').value = 5000;
+    document.getElementById('price-display').textContent = 'Any price';
+    document.querySelectorAll('.c-filter-item').forEach(el => el.classList.remove('active'));
+    document.getElementById('cat-all')?.classList.add('active');
+    applyFilters();
+  }
+
+  loadData();
+</script>
+</body>
+</html>

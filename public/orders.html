@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Orders — Nexus</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app">
+  <div id="sidebar-container"></div>
+  <div class="main-wrap">
+
+    <header class="page-header">
+      <div>
+        <div class="page-title">Orders</div>
+        <div class="page-sub">Manage and track customer orders</div>
+      </div>
+      <div class="header-actions">
+        <input class="input" id="search-input" style="width:220px" placeholder="Search orders…" oninput="filterOrders()">
+        <select class="select" id="status-filter" style="width:160px" onchange="filterOrders()">
+          <option value="">All Statuses</option>
+          <option value="pending">Pending</option>
+          <option value="processing">Processing</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button class="theme-toggle" id="theme-toggle" onclick="toggleTheme()">🌙</button>
+      </div>
+    </header>
+
+    <div class="page-content">
+      <div class="table-wrap">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Order #</th>
+              <th>Customer</th>
+              <th>Status</th>
+              <th>Total</th>
+              <th>Date</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="orders-tbody">
+            <tr><td colspan="6" style="text-align:center;padding:40px;color:var(--text-3)">Loading orders…</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Order Detail Modal -->
+<div class="modal-overlay hidden" id="order-modal">
+  <div class="modal" style="max-width:620px">
+    <div class="modal-head">
+      <span class="modal-title" id="modal-order-title">Order Details</span>
+      <button class="modal-close" onclick="closeModal('order-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="order-detail-content">
+      <div style="text-align:center;padding:24px;color:var(--text-3)">Loading…</div>
+    </div>
+    <div class="modal-footer">
+      <div style="flex:1;display:flex;align-items:center;gap:10px">
+        <label class="label" style="margin:0;white-space:nowrap">Update Status:</label>
+        <select class="select" id="status-update-select" style="width:160px">
+          <option value="pending">Pending</option>
+          <option value="processing">Processing</option>
+          <option value="shipped">Shipped</option>
+          <option value="delivered">Delivered</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost" onclick="closeModal('order-modal')">Close</button>
+      <button class="btn btn-primary" onclick="updateOrderStatus()">Update Status</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script>
+  renderSidebar('orders');
+  checkAuth();
+  document.getElementById('theme-toggle').textContent = document.documentElement.classList.contains('dark') ? '☀️' : '🌙';
+
+  let allOrders = [];
+  let currentOrderId = null;
+
+  async function loadOrders() {
+    const data = await API.get('/api/orders');
+    allOrders = data || [];
+    renderOrders(allOrders);
+  }
+
+  function renderOrders(orders) {
+    const tbody = document.getElementById('orders-tbody');
+    if (!orders.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">🛍️</div><div class="empty-text">No orders found</div></div></td></tr>`;
+      return;
+    }
+    tbody.innerHTML = orders.map(o => `
+      <tr>
+        <td><span class="font-mono text-accent">#${o.order_number || o.id}</span></td>
+        <td>
+          <div style="font-weight:500">${o.customer_name || '—'}</div>
+          <div class="text-muted text-sm">${o.customer_email || ''}</div>
+        </td>
+        <td>${statusBadge(o.status)}</td>
+        <td><strong>${formatCurrency(o.total)}</strong></td>
+        <td class="text-muted">${formatDateTime(o.created_at)}</td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="viewOrder(${o.id})">View</button>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function filterOrders() {
+    const q = document.getElementById('search-input').value.toLowerCase();
+    const s = document.getElementById('status-filter').value;
+    const filtered = allOrders.filter(o => {
+      const matchQ = !q
+        || (o.order_number || '').toString().toLowerCase().includes(q)
+        || (o.customer_name || '').toLowerCase().includes(q)
+        || (o.customer_email || '').toLowerCase().includes(q);
+      const matchS = !s || o.status === s;
+      return matchQ && matchS;
+    });
+    renderOrders(filtered);
+  }
+
+  async function viewOrder(id) {
+    currentOrderId = id;
+    document.getElementById('modal-order-title').textContent = 'Order Details';
+    document.getElementById('order-detail-content').innerHTML = '<div style="text-align:center;padding:32px;color:var(--text-3)">Loading…</div>';
+    openModal('order-modal');
+
+    const order = await API.get('/api/orders/' + id);
+    if (!order) return;
+
+    document.getElementById('modal-order-title').textContent = 'Order #' + (order.order_number || order.id);
+    document.getElementById('status-update-select').value = order.status;
+
+    const itemRows = (order.items || []).map(item => `
+      <tr>
+        <td>
+          <div style="font-weight:500">${item.product_name || item.name}</div>
+          ${item.sku ? `<div class="text-muted text-sm font-mono">${item.sku}</div>` : ''}
+        </td>
+        <td style="text-align:center">${item.quantity}</td>
+        <td style="text-align:right">${formatCurrency(item.price)}</td>
+        <td style="text-align:right"><strong>${formatCurrency(item.quantity * item.price)}</strong></td>
+      </tr>
+    `).join('');
+
+    document.getElementById('order-detail-content').innerHTML = `
+      <div class="form-row" style="margin-bottom:18px">
+        <div>
+          <div class="label">Customer</div>
+          <div style="font-weight:600">${order.customer_name || '—'}</div>
+          <div class="text-muted text-sm">${order.customer_email || ''}</div>
+          <div class="text-muted text-sm">${order.customer_phone || ''}</div>
+        </div>
+        <div>
+          <div class="label">Order Date</div>
+          <div>${formatDateTime(order.created_at)}</div>
+          <div class="label" style="margin-top:12px">Status</div>
+          ${statusBadge(order.status)}
+        </div>
+      </div>
+      ${order.shipping_address ? `
+        <div class="form-group">
+          <div class="label">Shipping Address</div>
+          <div class="text-sm">${order.shipping_address}</div>
+        </div>` : ''}
+      <hr class="divider">
+      <div class="label" style="margin-bottom:12px">Order Items</div>
+      <div class="table-wrap" style="margin-bottom:16px">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Product</th>
+              <th style="text-align:center">Qty</th>
+              <th style="text-align:right">Unit Price</th>
+              <th style="text-align:right">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>${itemRows || '<tr><td colspan="4" style="text-align:center;color:var(--text-3);padding:20px">No items</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div style="text-align:right;display:flex;flex-direction:column;gap:4px;align-items:flex-end">
+        ${order.subtotal !== undefined ? `<div class="text-muted text-sm">Subtotal: ${formatCurrency(order.subtotal)}</div>` : ''}
+        ${order.shipping_cost !== undefined ? `<div class="text-muted text-sm">Shipping: ${formatCurrency(order.shipping_cost)}</div>` : ''}
+        <div style="font-size:17px;font-weight:700;margin-top:4px">Total: ${formatCurrency(order.total)}</div>
+      </div>
+      ${order.notes ? `<hr class="divider"><div class="label">Notes</div><div class="text-sm">${order.notes}</div>` : ''}
+    `;
+  }
+
+  async function updateOrderStatus() {
+    if (!currentOrderId) return;
+    const status = document.getElementById('status-update-select').value;
+    const res = await API.put('/api/orders/' + currentOrderId + '/status', { status });
+    if (res && !res.error) {
+      showToast('Order status updated', 'success');
+      closeModal('order-modal');
+      loadOrders();
+    } else {
+      showToast(res?.error || 'Failed to update status', 'error');
+    }
+  }
+
+  loadOrders();
+</script>
+</body>
+</html>

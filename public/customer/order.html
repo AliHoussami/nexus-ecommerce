@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Order Details — Nexus Store</title>
+  <link rel="stylesheet" href="/css/customer.css">
+</head>
+<body>
+<script src="/js/customer-common.js"></script>
+<script>renderCustomerNav('orders');</script>
+
+<div class="c-page">
+  <div class="c-container-md">
+
+    <!-- Back -->
+    <a href="/customer/orders.html" style="display:inline-flex;align-items:center;gap:6px;color:var(--text-2);font-size:14px;font-weight:500;margin-bottom:20px;text-decoration:none" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text-2)'">
+      ← Back to Orders
+    </a>
+
+    <div id="order-content">
+      <div style="text-align:center;padding:80px;color:var(--text-3)">Loading order details…</div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  checkCustomerAuth();
+  const orderId = new URLSearchParams(location.search).get('id');
+  if (!orderId) window.location.href = '/customer/orders.html';
+
+  const STATUSES = ['pending','processing','shipped','delivered'];
+
+  function getStepState(status, step) {
+    const idx = STATUSES.indexOf(status);
+    const stepIdx = STATUSES.indexOf(step);
+    if (status === 'cancelled') return stepIdx === 0 ? 'done' : 'pending';
+    if (stepIdx < idx) return 'done';
+    if (stepIdx === idx) return 'active';
+    return 'pending';
+  }
+
+  const STEP_ICONS  = { pending:'🕐', processing:'⚙️', shipped:'🚚', delivered:'✅' };
+  const STEP_LABELS = { pending:'Order Placed', processing:'Processing', shipped:'Shipped', delivered:'Delivered' };
+  const STEP_SUBS   = { pending:'We received your order', processing:'Preparing your items', shipped:'On its way to you', delivered:'Enjoy your purchase!' };
+
+  async function loadOrder() {
+    const order = await CAPI.get('/api/customer/orders/' + orderId);
+    if (!order) return;
+
+    const isCancelled = order.status === 'cancelled';
+    const steps = STATUSES.map((s, i) => {
+      const state = getStepState(order.status, s);
+      const isLast = i === STATUSES.length - 1;
+      return `
+        <div class="c-timeline-step">
+          <div class="c-timeline-left">
+            <div class="c-timeline-dot ${state}">${state === 'done' ? '✓' : state === 'active' ? STEP_ICONS[s] : '○'}</div>
+            ${!isLast ? `<div class="c-timeline-line ${state === 'done' ? 'done' : ''}"></div>` : ''}
+          </div>
+          <div class="c-timeline-content">
+            <div class="c-timeline-label ${state === 'pending' ? 'pending' : ''}">${STEP_LABELS[s]}</div>
+            <div class="c-timeline-sub">${state !== 'pending' ? STEP_SUBS[s] : 'Waiting…'}</div>
+          </div>
+        </div>`;
+    }).join('');
+
+    const items = (order.items || []).map(item => `
+      <div style="display:flex;align-items:center;gap:16px;padding:14px 0;border-bottom:1px solid var(--border)">
+        <div style="width:52px;height:52px;border-radius:10px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:26px;flex-shrink:0">${categoryEmoji(item.category)}</div>
+        <div style="flex:1">
+          <div style="font-weight:600;color:var(--text)">${item.name}</div>
+          <div style="font-size:12.5px;color:var(--text-3)">${item.sku} · Qty: ${item.quantity}</div>
+        </div>
+        <div style="font-weight:700;color:var(--text)">${cFormatCurrency(item.price * item.quantity)}</div>
+      </div>
+    `).join('');
+
+    document.getElementById('order-content').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 320px;gap:20px;align-items:start">
+
+        <!-- Left column -->
+        <div style="display:flex;flex-direction:column;gap:20px">
+
+          <!-- Header -->
+          <div class="c-card">
+            <div class="c-card-body">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px">
+                <div>
+                  <div style="font-size:22px;font-weight:800;color:var(--text)">${order.order_number}</div>
+                  <div style="font-size:13.5px;color:var(--text-3);margin-top:4px">Placed on ${cFormatDate(order.created_at)}</div>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  ${cStatusBadge(order.status)}
+                  ${order.status === 'delivered' ? `<a href="/customer/returns.html?order=${order.id}" class="c-btn c-btn-ghost c-btn-sm">Request Return</a>` : ''}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Timeline -->
+          ${!isCancelled ? `
+          <div class="c-card">
+            <div class="c-card-head"><span class="c-card-title">Order Status</span></div>
+            <div class="c-card-body">
+              <div class="c-timeline">${steps}</div>
+            </div>
+          </div>` : `
+          <div style="background:var(--danger-bg);border:1.5px solid var(--danger);border-radius:var(--r-lg);padding:20px;display:flex;align-items:center;gap:14px">
+            <span style="font-size:28px">❌</span>
+            <div>
+              <div style="font-weight:700;color:var(--danger)">Order Cancelled</div>
+              <div style="font-size:13.5px;color:var(--text-2);margin-top:2px">This order has been cancelled.</div>
+            </div>
+          </div>`}
+
+          <!-- Items -->
+          <div class="c-card">
+            <div class="c-card-head"><span class="c-card-title">Items (${(order.items||[]).length})</span></div>
+            <div style="padding:4px 20px">${items}</div>
+          </div>
+
+        </div>
+
+        <!-- Right: Summary -->
+        <div class="c-card">
+          <div class="c-card-head"><span class="c-card-title">Order Summary</span></div>
+          <div class="c-card-body" style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;justify-content:space-between;font-size:14px">
+              <span style="color:var(--text-2)">Subtotal</span>
+              <span style="font-weight:600">${cFormatCurrency(order.total)}</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:14px">
+              <span style="color:var(--text-2)">Shipping</span>
+              <span style="color:var(--success);font-weight:600">Free</span>
+            </div>
+            <div class="c-divider"></div>
+            <div style="display:flex;justify-content:space-between;font-size:17px;font-weight:800">
+              <span>Total</span>
+              <span style="color:var(--accent)">${cFormatCurrency(order.total)}</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    `;
+  }
+
+  loadOrder();
+</script>
+</body>
+</html>

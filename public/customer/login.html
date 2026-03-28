@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexus Store — Sign In</title>
+  <link rel="stylesheet" href="/css/customer.css">
+</head>
+<body>
+<div class="c-login-page">
+
+  <!-- Hero Side -->
+  <div class="c-login-hero">
+    <div class="c-login-hero-content">
+      <div class="c-login-hero-logo">⚡</div>
+      <h1>Welcome to Nexus Store</h1>
+      <p>Your personal shopping experience with an AI advisor that finds exactly what you need.</p>
+      <div class="c-login-hero-features">
+        <div class="c-login-hero-feature">
+          <div class="icon">✨</div>
+          <span>AI-powered product recommendations</span>
+        </div>
+        <div class="c-login-hero-feature">
+          <div class="icon">📦</div>
+          <span>Real-time order tracking</span>
+        </div>
+        <div class="c-login-hero-feature">
+          <div class="icon">♡</div>
+          <span>Save products to your wishlist</span>
+        </div>
+        <div class="c-login-hero-feature">
+          <div class="icon">↩️</div>
+          <span>Hassle-free returns & refunds</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Form Side -->
+  <div class="c-login-form-side">
+    <div class="c-login-box">
+      <h2 id="form-title">Welcome back</h2>
+      <p class="subtitle" id="form-sub">Sign in to your account to continue shopping</p>
+
+      <div class="c-tabs">
+        <button class="c-tab active" id="tab-login" onclick="switchTab('login')">Sign In</button>
+        <button class="c-tab" id="tab-register" onclick="switchTab('register')">Create Account</button>
+      </div>
+
+      <!-- Login Form -->
+      <form id="login-form" onsubmit="doLogin(event)">
+        <div class="c-form-group">
+          <label class="c-label">Email Address</label>
+          <input class="c-input" id="l-email" type="email" required placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="c-form-group">
+          <label class="c-label">Password</label>
+          <input class="c-input" id="l-password" type="password" required placeholder="••••••••" autocomplete="current-password">
+        </div>
+        <div id="login-error" style="color:var(--danger);font-size:13.5px;margin-bottom:14px;display:none"></div>
+        <button type="submit" class="c-btn c-btn-primary" style="width:100%;justify-content:center;padding:13px" id="login-btn">
+          Sign In
+        </button>
+        <p style="text-align:center;margin-top:18px;font-size:13.5px;color:var(--text-2)">
+          Don't have an account? <a href="#" onclick="switchTab('register')">Create one</a>
+        </p>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" onsubmit="doRegister(event)" style="display:none">
+        <div class="c-form-group">
+          <label class="c-label">Full Name</label>
+          <input class="c-input" id="r-name" required placeholder="Your full name" autocomplete="name">
+        </div>
+        <div class="c-form-group">
+          <label class="c-label">Email Address</label>
+          <input class="c-input" id="r-email" type="email" required placeholder="you@example.com" autocomplete="email">
+        </div>
+        <div class="c-form-group">
+          <label class="c-label">Phone (optional)</label>
+          <input class="c-input" id="r-phone" placeholder="+1 (555) 000-0000" autocomplete="tel">
+        </div>
+        <div class="c-form-group">
+          <label class="c-label">Password</label>
+          <input class="c-input" id="r-password" type="password" required placeholder="Min. 8 characters" autocomplete="new-password" minlength="8">
+        </div>
+        <div id="register-error" style="color:var(--danger);font-size:13.5px;margin-bottom:14px;display:none"></div>
+        <button type="submit" class="c-btn c-btn-primary" style="width:100%;justify-content:center;padding:13px" id="register-btn">
+          Create Account
+        </button>
+        <p style="text-align:center;margin-top:18px;font-size:13.5px;color:var(--text-2)">
+          Already have an account? <a href="#" onclick="switchTab('login')">Sign in</a>
+        </p>
+      </form>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  // Simple theme init without nav
+  if (localStorage.getItem('nexus-theme') === 'dark') document.documentElement.classList.add('dark');
+
+  function switchTab(tab) {
+    const isLogin = tab === 'login';
+    document.getElementById('tab-login').classList.toggle('active', isLogin);
+    document.getElementById('tab-register').classList.toggle('active', !isLogin);
+    document.getElementById('login-form').style.display    = isLogin ? '' : 'none';
+    document.getElementById('register-form').style.display = isLogin ? 'none' : '';
+    document.getElementById('form-title').textContent = isLogin ? 'Welcome back' : 'Create your account';
+    document.getElementById('form-sub').textContent   = isLogin ? 'Sign in to your account to continue shopping' : 'Join Nexus Store and start shopping smarter';
+  }
+
+  async function doLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('login-btn');
+    const errEl = document.getElementById('login-error');
+    btn.disabled = true; btn.textContent = 'Signing in…';
+    errEl.style.display = 'none';
+    try {
+      const res = await fetch('/api/customer/auth/login', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: document.getElementById('l-email').value, password: document.getElementById('l-password').value })
+      });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; }
+      else { window.location.href = '/customer/dashboard.html'; }
+    } catch { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    btn.disabled = false; btn.textContent = 'Sign In';
+  }
+
+  async function doRegister(e) {
+    e.preventDefault();
+    const btn = document.getElementById('register-btn');
+    const errEl = document.getElementById('register-error');
+    btn.disabled = true; btn.textContent = 'Creating account…';
+    errEl.style.display = 'none';
+    try {
+      const res = await fetch('/api/customer/auth/register', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: document.getElementById('r-name').value,
+          email: document.getElementById('r-email').value,
+          phone: document.getElementById('r-phone').value,
+          password: document.getElementById('r-password').value
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) { errEl.textContent = data.error; errEl.style.display = 'block'; }
+      else { window.location.href = '/customer/dashboard.html'; }
+    } catch { errEl.textContent = 'Connection error. Please try again.'; errEl.style.display = 'block'; }
+    btn.disabled = false; btn.textContent = 'Create Account';
+  }
+</script>
+</body>
+</html>
